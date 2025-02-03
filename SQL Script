@@ -1,0 +1,350 @@
+-------------Customer-oriented Analysis-------------
+--EXTRA Analysis 
+SELECT
+count (DISTINCT customerid) NumCustomers,
+count (DISTINCT country) NumCountries
+from Customers
+----93 customers in 21 countries  
+
+
+/* Categorizing Customers based on the below criteria
+-Recency from 64 to 233
+-Freq from 5325 to 13283
+-Rev 3,965,465 to 9,745,371
+-Champions: 60-120 R,, >10k F,, >6000000
+-Potential: 120-190 R,, 9k-6K F, 4 to 7 
+-Risk: >200  <5k F,, <4
+*/
+
+--Creating Views to use in the CASE WHEN Staments 
+--CHAMPIONS
+create view Champions as 
+SELECT
+companyname, 
+round(Julianday('2023-12-31')-julianday(MAX (o.orderdate)),1) as Recency,
+COUNT (o.OrderID) as Frequency,
+round(SUM (unitprice*quantity*(1-discount)),0) as Revenue
+from Customers c
+join Orders o 
+on c.CustomerID = o.CustomerID
+join "Order Details" AS od
+on o.OrderID = od."OrderID"
+group by c.companyname
+HAVING Recency BETWEEN 60 and 120
+and Frequency > 7000
+and Revenue > 6000000
+
+
+--Potential 
+CREATE view Potential_Loyalists as 
+SELECT
+companyname, 
+round(Julianday('2023-12-31')-julianday(MAX (o.orderdate)),1) as Recency,
+COUNT (o.OrderID) as Frequency,
+round(SUM (unitprice*quantity*(1-discount)),0) as Revenue
+from Customers c
+join Orders o 
+on c.CustomerID = o.CustomerID
+join "Order Details" AS od
+on o.OrderID = od."OrderID"
+group by c.companyname
+HAVING Frequency BETWEEN 5000 and 7000 
+and Revenue BETWEEN 4555555 and 6000000
+
+
+
+---Categorizing them using sub queries 
+SELECT 
+    c.companyname,
+    CASE 
+        WHEN c.companyname IN 
+        (SELECT companyname FROM champions) THEN 'champions' 
+        WHEN c.companyname IN 
+        (SELECT companyname FROM Potential_Loyalists) THEN 'Potential_Loyalists'
+        ELSE 'At_Risk'  
+    END AS Customer_Gp
+FROM 
+    Customers c;
+
+---one way of categorizing customers---
+WITH CustomerGroups AS (
+    SELECT 
+        c.companyname,
+  case 
+        WHEN c.companyname IN 
+        (SELECT companyname FROM champions) THEN 'champions' 
+        WHEN c.companyname IN 
+        (SELECT companyname FROM Potential_Loyalists) THEN 'Potential_Loyalists'
+        ELSE 'At_Risk'  
+    END AS Customer_Gp
+FROM 
+    Customers c 
+)
+
+SELECT 
+    Customer_Gp, 
+    COUNT(*) AS 'Count'
+FROM 
+    CustomerGroups
+GROUP BY 
+    Customer_Gp;
+
+
+--- Another way to categorize Customers------
+WITH CustomerGroups AS (
+    SELECT 
+        c.companyname,
+        CASE 
+            WHEN ch.companyname IS NOT NULL THEN 'champions' 
+            WHEN pl.companyname IS NOT NULL THEN 'Potential_Loyalists'
+            ELSE 'At_Risk'
+        END AS Customer_Gp
+    FROM 
+        Customers c
+    LEFT JOIN 
+        champions ch ON c.companyname = ch.companyname
+    LEFT JOIN 
+        Potential_Loyalists pl ON c.companyname = pl.companyname
+   
+)
+
+SELECT 
+    Customer_Gp, 
+    COUNT(*) AS Count
+FROM 
+    CustomerGroups
+GROUP BY 
+    Customer_Gp;
+
+
+
+---AVG Order Value Per Customer
+--23790 30449
+
+SELECT 
+ companyname,
+round(AVG (TotalV),0) AvgOrder_Customer
+from Customers c
+join Orders o on c.CustomerID= o.CustomerID
+join (
+  SELECT
+  orderid, 
+  sum (quantity*unitprice*(1-discount)) TotalV
+  from "Order Details" 
+  group by 1) od 
+  on od.orderID= O.OrderID
+  group by 1
+  order by 2 
+
+------Extra Customer-Oriented Analysis-----
+
+SELECT
+shipcountry,
+round(SUM (unitprice*quantity*(1-discount)),0) as Revenue
+FROM Orders o
+JOIN "Order Details" od
+ON o.OrderID= od.OrderID
+gROUP BY 1
+ORDER BY 2 DESC
+
+SELECT
+round(SUM (unitprice*quantity*(1-discount)),0) as Revenue
+FROM "Order Details"
+
+SELECT
+country,
+count (DISTINCT customerid) NumCustomers
+from Customers
+GROUP by 1
+order by 2 DESC
+
+
+
+--------Product Oriented Analysis--------------------- 
+--Top 10 revenue products "High Revenue Value"
+--10 most frequently orderd products "High Sales Volume"
+--products with low sales volume "Slow Movers" 
+  
+SELECT 
+s.CompanyName, productname, 
+round(Sum (od.unitprice*od.quantity* (1-discount)),0) ProductRevenue,
+SUM(od.quantity) AS QuantityOrdered
+from "Order Details" od
+JOIN Products as p
+ON od.ProductID= p.ProductID
+join Suppliers s
+on s.SupplierID= p.SupplierID
+group by 1
+order by 4 DESC
+LIMIT 10
+
+--LOW SALES VOLUME 
+--COALESCE Function 
+SELECT 
+od.ProductID,
+p.ProductName,
+COALESCE(SUM(od.Quantity), 0) AS TotalQuantityOrdered
+FROM 
+Products p
+LEFT JOIN 
+"Order Details" od
+ON p.ProductID = od.ProductID
+GROUP BY 
+p.ProductID, p.ProductName
+ORDER BY 
+TotalQuantityOrdered ASC
+LIMIT 5 
+
+
+--Extra Analysis 
+SELECT 
+COUNT (DISTINCT productid) FROM Products
+--77 Products 
+SELECT 
+count(DISTINCT supplierid) from Suppliers
+--29 suppliers 
+
+
+------------Order Oriented Analysis---------------
+
+--No of order per season (12-13-14-15-16-17-18-19-20-21-22-23)
+--No of orders per day 
+--avg order value 
+SELECT
+MIN (orderdate), max (orderdate)
+from Orders
+
+
+
+--Number of orders per Season Analysis 
+
+SELECT 
+case 
+when STRFTIME ('%m', orderdate) in ( '03','04','05')
+then 'Spring'
+when STRFTIME ('%m', orderdate) in ('06','07','08')
+then 'Summer'
+when STRFTIME ('%m', orderdate) in ('09','10','11')
+THEN 'Fall'
+eLSE 'Winter'
+END Season,
+COUNT (orderid) NumOrders
+from Orders
+GROUP by Season
+order by 2 DESC 
+
+
+
+--Days of the Month Analysis
+SELECT
+case 
+when strftime ('%w', orderdate) = '0' then 'Sunday'
+when strftime ('%w', orderdate) = '1' then 'Monday'
+when strftime ('%w', orderdate) = '2' then 'Tuesday'
+when strftime ('%w', orderdate) = '3' then 'Wednesday'
+when strftime ('%w', orderdate) = '4' then 'Thursday'
+when strftime ('%w', orderdate) = '5' then 'Friday'
+when strftime ('%w', orderdate) = '6' then 'Saturday'
+END AS Day, 
+COUNT (o.orderid) NumofOrders,
+SUM (od.quantity) TotalQuantity
+from Orders o
+join "Order Details" od
+on o.OrderID = od.orderID
+group by 1
+order by 3 DESC
+
+--Monday is the Highest, Thursday is the lowest
+
+SELECT
+strftime ('%d',orderdate) DayNumber,
+COUNT (orderid) NumOrders
+from orders 
+group by 1
+order by 2 DESC
+
+
+--Extra Analysis 
+SELECT 
+COUNT (orderid),
+case 
+when 
+STRFTIME ('%Y',orderdate) between '2012' and '2015'
+then '1stPeriod'
+when STRFTIME ('%Y', orderdate) between '2016' and '2019'
+then '2ndPeriod'
+Else '3rdPeriod'
+END Periods
+from Orders
+GROUP by 2 
+
+-------------Employee Oriented Analysis--------------------
+--Revenue Per Employee 
+--NumOrders Per Employee 
+--AVG Order Value Per Employee 
+SELECT
+count (DISTINCT employeeid)
+from Employees
+
+--Revenue and NumOrders Per employee
+SELECT
+e.lastname, 
+round(Sum (od.unitprice*od.quantity* (1-od.discount)),0) RevenuePerEmployee,
+COUNT (o.orderid) NumOrders
+from Employees e 
+ left join Orders o 
+on e.EmployeeID= o.EmployeeID
+join "Order Details" od
+on o.OrderID = od.orderID
+GROUP by 1
+order by 2 DESC
+
+
+-----AVG ORDER VALUE PER EMPLOYEE 
+
+SELECT 
+    e.LastName,
+    round(AVG(order_total),0) AS AverageOrderValue
+FROM 
+    Employees e
+JOIN 
+    Orders o ON e.EmployeeID = o.EmployeeID
+JOIN 
+    (
+        SELECT 
+            OrderID,
+            SUM(UnitPrice * Quantity) AS order_total
+        FROM 
+            "Order Details"
+        GROUP BY 
+            OrderID
+    ) od ON o.OrderID = od.OrderID
+GROUP BY 
+    e.LastName
+ORDER BY 
+    AverageOrderValue DESC;
+
+---Extra Analayis (Gender)
+
+SELECT Gender,
+COUNT(Gender) 
+from (
+SELECT titleofcourtesy,
+case when titleofcourtesy in ('Mrs.','Ms.') THEN 'Female'
+when titleofcourtesy = 'Mr.' then 'Male'
+  else 'NA'
+end 'Gender'
+  from Employees
+)
+  group by 1 
+  
+  SELECT 
+  Min(hiredate), max (hiredate) from Employees
+  
+  
+  Select AVG(Age) from (
+  SELECT
+  date('2023-12-31') - date(birthdate) Age
+  from Employees)
+  
+     
